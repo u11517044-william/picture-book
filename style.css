@@ -1,0 +1,265 @@
+/* ==========================================================
+   繪本電子書樣式
+   1. 全域重置（border-box、禁止橫向捲動）
+   2. 主版面
+   3. 按鈕與動態效果
+   4. 載入 / 錯誤提示、翻頁動畫、除錯面板
+   5. 響應式（RWD）
+   ========================================================== */
+
+/* ---------- 1. 全域重置 ---------- */
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+body { margin: 0; overflow-x: hidden; }
+
+html, body { height: 100%; max-width: 100%; }
+
+:root {
+  --accent: #ff7aa8;
+  --accent-dark: #e85c8e;
+  --text: #5b4636;
+  --nav-size: 84px;
+  --tool-size: 76px;
+  --radius: 24px;
+}
+
+body {
+  font-family: "jf-openhuninn", "Comic Sans MS", "Chalkboard SE",
+               "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+  color: var(--text);
+  background: linear-gradient(135deg, #ffe9f1, #e3f4ff 55%, #fff6d6);
+  background-attachment: fixed;
+  user-select: none;
+}
+
+[hidden] { display: none !important; }
+img { -webkit-user-drag: none; user-drag: none; }
+button { font: inherit; border: 0; padding: 0; background: none; cursor: pointer; }
+button:focus-visible { outline: 4px solid #4aa8ff; outline-offset: 3px; }
+
+/* ---------- 2. 主版面 ---------- */
+#app {
+  width: 100%;                       /* 不使用 100vw，避免捲軸寬度造成溢出 */
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding: 0 12px;
+  overflow: hidden;
+}
+
+#topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 8px 4px;
+}
+#topbar .title { margin: 0; font-size: clamp(18px, 3vw, 26px); }
+
+#page-indicator {
+  background: #fff;
+  border: 3px solid var(--accent);
+  border-radius: 999px;
+  padding: 4px 16px;
+  font-weight: bold;
+  font-size: clamp(14px, 2.2vw, 20px);
+  white-space: nowrap;
+}
+
+/* 舞台：兩側預留翻頁按鈕空間 */
+#stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 calc(var(--nav-size) + 16px);
+}
+
+#book {
+  position: relative;
+  width: 100%; height: 100%;
+  min-width: 0; min-height: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+
+#page-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  background: #fff;
+  border: 8px solid #fff;
+  border-radius: var(--radius);
+  box-shadow: 0 10px 30px rgba(120, 90, 60, .25);
+}
+
+/* 進度條 */
+#progress {
+  height: 10px; margin: 6px 12px;
+  background: rgba(255, 255, 255, .8);
+  border-radius: 999px; overflow: hidden;
+}
+#progress-bar {
+  height: 100%; width: 0;
+  background: linear-gradient(90deg, #ffb347, var(--accent));
+  border-radius: 999px;
+  transition: width .4s ease;
+}
+
+#toolbar {
+  display: flex; justify-content: center; align-items: center;
+  gap: 28px;
+  padding: 10px 0 calc(14px + env(safe-area-inset-bottom));
+}
+
+/* ---------- 3. 按鈕與動態效果 ---------- */
+.nav-btn, #read-btn {
+  border-radius: 50%;
+  overflow: hidden;
+  background: #fff;
+  border: 5px solid #fff;
+  box-shadow: 0 6px 0 rgba(0, 0, 0, .12), 0 10px 20px rgba(0, 0, 0, .15);
+  transition: transform .12s ease, box-shadow .12s ease, opacity .2s;
+}
+.nav-btn img, #read-btn img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.nav-btn {
+  position: absolute; top: 50%; z-index: 5;
+  width: var(--nav-size); height: var(--nav-size);
+  transform: translateY(-50%);
+}
+.nav-left  { left: 4px; }
+.nav-right { right: 4px; }
+
+#read-btn, #spirit-btn { width: var(--tool-size); height: var(--tool-size); }
+
+/* 滑過：彈跳；按下：往下壓 */
+.nav-btn:hover:not(:disabled)  { transform: translateY(-50%) scale(1.1); }
+.nav-btn:active:not(:disabled) { transform: translateY(-46%) scale(.92); box-shadow: 0 1px 0 rgba(0,0,0,.12); }
+#read-btn:hover  { transform: scale(1.1) rotate(-4deg); }
+#read-btn:active { transform: translateY(4px) scale(.92); box-shadow: 0 1px 0 rgba(0,0,0,.12); }
+
+/* 到達第一頁 / 最後一頁時停用 */
+.nav-btn:disabled { opacity: .3; cursor: not-allowed; }
+
+/* 朗讀中：按鈕脈動 */
+#read-btn.reading { animation: pulse 1s ease-in-out infinite; border-color: var(--accent); }
+
+/* 精靈 = 靜音切換：平常飄浮，靜音時變灰並出現 🔇 */
+#spirit-btn {
+  position: relative;
+  animation: float 2.6s ease-in-out infinite;
+  transition: transform .12s ease;
+}
+#spirit-btn img {
+  width: 100%; height: 100%; object-fit: contain; display: block;
+  filter: drop-shadow(0 6px 8px rgba(0, 0, 0, .25));
+  transition: filter .2s, opacity .2s;
+}
+#spirit-btn:hover  { transform: scale(1.1); }
+#spirit-btn:active { transform: scale(.9); }
+#spirit-btn.wiggle { animation: wiggle .6s ease; }
+#spirit-btn.is-muted img { filter: grayscale(1) drop-shadow(0 6px 8px rgba(0, 0, 0, .25)); opacity: .55; }
+#spirit-btn.is-muted::after {
+  content: "🔇"; position: absolute; right: -4px; bottom: -4px; font-size: 28px;
+}
+
+#debug-btn {
+  background: #333; color: #0f0; font-family: monospace; font-size: 13px;
+  padding: 6px 12px; border-radius: 8px;
+}
+
+/* ---------- 4. 載入 / 錯誤提示、翻頁動畫、除錯面板 ---------- */
+#loading-indicator {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  background: rgba(255, 255, 255, .92);
+  border: 3px solid var(--accent);
+  border-radius: 999px;
+  padding: 10px 24px;
+  font-size: clamp(16px, 2.6vw, 22px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .15);
+  animation: pulse 1s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 3;
+}
+
+#error-message {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  max-width: 90%;
+  background: #fff;
+  border: 4px solid #ff6b6b;
+  border-radius: var(--radius);
+  padding: 18px 24px;
+  text-align: center;
+  font-size: clamp(16px, 2.6vw, 22px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .2);
+  z-index: 4;
+}
+#retry-btn {
+  margin-left: 8px; padding: 6px 18px;
+  background: var(--accent); color: #fff; border-radius: 999px;
+  box-shadow: 0 4px 0 var(--accent-dark);
+}
+#retry-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--accent-dark); }
+
+#page-image.enter-next { animation: slideInRight .45s cubic-bezier(.2, .9, .3, 1.2); }
+#page-image.enter-prev { animation: slideInLeft  .45s cubic-bezier(.2, .9, .3, 1.2); }
+#page-image.enter-fade { animation: fadeIn .4s ease; }
+
+#toast {
+  position: fixed; z-index: 60; top: 16px; left: 50%;
+  transform: translateX(-50%);
+  max-width: 92%;
+  background: rgba(60, 40, 30, .88); color: #fff;
+  padding: 10px 20px; border-radius: 999px; font-size: 15px; text-align: center;
+  animation: fadeIn .25s ease;
+}
+
+#debug-panel {
+  position: fixed; z-index: 80; left: 8px; bottom: 8px;
+  max-width: calc(100% - 16px); max-height: 45vh; overflow: auto;
+  margin: 0; padding: 10px 12px;
+  background: rgba(0, 0, 0, .85); color: #9f9;
+  font: 12px/1.4 monospace; white-space: pre-wrap; word-break: break-all;
+  border-radius: 8px; user-select: text;
+}
+
+@keyframes float  { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+@keyframes pulse  { 0%, 100% { scale: 1; } 50% { scale: 1.1; } }
+@keyframes wiggle {
+  0%, 100% { transform: rotate(0); }
+  20% { transform: rotate(-14deg) scale(1.15); }
+  40% { transform: rotate(12deg)  scale(1.15); }
+  60% { transform: rotate(-8deg); }
+  80% { transform: rotate(6deg); }
+}
+@keyframes slideInRight { from { opacity: 0; transform: translateX(60px)  scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes slideInLeft  { from { opacity: 0; transform: translateX(-60px) scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes fadeIn       { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---------- 5. 響應式（RWD） ---------- */
+@media (max-width: 1024px) {
+  :root { --nav-size: 68px; --tool-size: 66px; }
+}
+
+/* 手機（375 / 390px 等）：按鈕縮小並半透明蓋在圖片兩側，確保不會橫向溢出 */
+@media (max-width: 640px) {
+  :root { --nav-size: 52px; --tool-size: 58px; }
+  #app { padding: 0 8px; }
+  #stage { padding: 0; }
+  .nav-btn { opacity: .85; border-width: 3px; }
+  .nav-btn:disabled { opacity: .25; }
+  .nav-left  { left: 6px; }
+  .nav-right { right: 6px; }
+  #toolbar { gap: 18px; }
+  #page-image { border-width: 5px; border-radius: 16px; }
+}
+
+/* 手機橫放：縮小上下留白 */
+@media (max-height: 480px) {
+  #topbar { display: none; }
+  :root { --tool-size: 50px; }
+  #toolbar { padding: 4px 0 6px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

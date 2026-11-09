@@ -1,360 +1,54 @@
-/* ==========================================================
-   繪本電子書主程式（純 JavaScript，無需任何套件）
-   結構：
-     1. CONFIG       ← 檔名、數量、精靈台詞，都在這裡改
-     2. DOM / State  ← 元素與狀態
-     3. 工具函式     ← 音訊檔「多副檔名自動探測」、提示訊息
-     4. 頁面模組     ← 翻頁、預載圖片、進度
-     5. 朗讀模組     ← 播放 / 停止本頁語音
-     6. 音樂模組     ← 背景音樂開關
-     7. 精靈模組     ← 點擊特效與提示
-     8. 事件綁定     ← 按鈕、鍵盤、滑動手勢
-   ========================================================== */
-(() => {
-  'use strict';
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>互動繪本電子書</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
 
-  /* ---------- 1. CONFIG：設定區 ---------- */
-  const CONFIG = {
-    // 繪本頁面：graphics/0.jpg ~ graphics/19.jpg
-    firstPage: 0,
-    lastPage: 19,
-    imageDir: 'graphics/',
-    imageExt: 'jpg',
+  <div id="app">
 
-    // 語音：預設找 speech/0.mp3、speech/1.mp3 ...
-    // 若你的檔名不同（例如 page01.mp3），改 speechName 這個函式即可
-    speechDir: 'speech/',
-    speechExts: ['mp3', 'm4a', 'wav', 'ogg'],      // 依序嘗試，找到第一個存在的就用
-    speechName: (page) => String(page),
+    <!-- 上方：標題與閱讀位置提示 -->
+    <header id="topbar">
+      <h1 class="title">📚 繪本故事</h1>
+      <div id="page-indicator" aria-live="polite">第 1 / 20 頁</div>
+    </header>
 
-    // 背景音樂：依序嘗試以下檔案，使用第一個存在的
-    // 請把其中一個換成你 music/ 資料夾內真正的檔名（或直接加在最前面）
-    musicCandidates: [
-      'music/bgm.mp3',
-      'music/music.mp3',
-      'music/background.mp3',
-      'music/bgm.m4a',
-      'music/bgm.ogg',
-      'music/bgm.wav',
-    ],
-    musicVolume: 0.25,          // 背景音樂音量（0~1），朗讀時會自動再降低
-    musicDuckVolume: 0.08,      // 朗讀時的背景音樂音量
+    <!-- 中間：繪本舞台（左右為翻頁按鈕） -->
+    <main id="stage">
+      <button id="prev-btn" class="nav-btn nav-left" aria-label="上一頁"><img src="graphics/left.jpg" alt="上一頁"></button>
 
-    // 朗讀完是否自動翻到下一頁
-    autoNextAfterRead: false,
+      <div id="book">
+        <!-- 起始載入第 0 頁；之後由 app.js 切換 src -->
+        <img id="page-image" src="graphics/0.jpg" alt="繪本第 1 頁">
 
-    // 精靈提示：可替特定頁面寫專屬台詞，沒寫的頁面會隨機抽 defaultTips
-    spiritTips: {
-      0:  '歡迎來到故事的世界！按右邊箭頭翻頁喔～',
-      19: '故事結束了，你好棒！要不要再看一次？',
-    },
-    defaultTips: [
-      '仔細看看圖片，你發現了什麼呢？',
-      '按一下喇叭，我來唸給你聽！',
-      '圖片裡藏著小驚喜，找找看！',
-      '你最喜歡這一頁的哪個地方？',
-      '深呼吸，我們繼續冒險吧！',
-    ],
-    sparkleEmojis: ['⭐', '✨', '🌟', '💖', '🎈', '🌈'],
-  };
+        <!-- 載入中提示 -->
+        <div id="loading-indicator">載入中...</div>
 
-  /* ---------- 2. DOM 與狀態 ---------- */
-  const $ = (id) => document.getElementById(id);
-  const els = {
-    start: $('start-screen'), btnStart: $('btn-start'), optMusic: $('opt-music'),
-    app: $('app'),
-    img: $('page-img'), error: $('page-error'),
-    prev: $('btn-prev'), next: $('btn-next'),
-    read: $('btn-read'), spirit: $('btn-spirit'), music: $('btn-music'), musicIcon: $('music-icon'),
-    indicator: $('page-indicator'), bar: $('progress-bar'), stage: $('stage'),
-    bubble: $('bubble'), toast: $('toast'), fx: $('fx-layer'),
-  };
+        <!-- 素材載入失敗提示 -->
+        <div id="error-message" style="display:none;">素材載入失敗 <button id="retry-btn">重試</button></div>
+      </div>
 
-  const state = {
-    page: CONFIG.firstPage,
-    musicOn: false,
-    reading: false,
-    speechToken: 0,          // 用來辨識「過期」的語音載入（快速翻頁時避免誤播）
-    pageToken: 0,            // 同理，用於圖片載入
-    speechUrlCache: {},      // page -> 已確認可用的語音網址
-    musicUrl: null,
-  };
+      <button id="next-btn" class="nav-btn nav-right" aria-label="下一頁"><img src="graphics/right.jpg" alt="下一頁"></button>
+    </main>
 
-  const speechAudio = new Audio();
-  const musicAudio = new Audio();
-  musicAudio.loop = true;
-  musicAudio.volume = CONFIG.musicVolume;
+    <!-- 進度條 -->
+    <div id="progress"><div id="progress-bar"></div></div>
 
-  /* ---------- 3. 工具函式 ---------- */
+    <!-- 下方：功能列 -->
+    <footer id="toolbar">
+      <button id="read-btn" class="tool-btn" aria-label="朗讀"><img src="graphics/read.jpg" alt="朗讀"></button>
+      <button id="spirit-btn" class="tool-btn" aria-label="靜音控制"><img src="graphics/spirit.png" alt="精靈"></button>
+      <button id="debug-btn" style="display:none;" aria-label="除錯">Debug</button>
+    </footer>
 
-  /** 顯示短暫的提示訊息 */
-  let toastTimer;
-  function toast(msg, ms = 2500) {
-    els.toast.textContent = msg;
-    els.toast.hidden = false;
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => (els.toast.hidden = true), ms);
-  }
+    <!-- 一般提示訊息與除錯面板 -->
+    <div id="toast" hidden></div>
+    <pre id="debug-panel" hidden></pre>
+  </div>
 
-  /**
-   * 依序嘗試多個網址，回傳第一個「能載入」的網址。
-   * 這樣不管你的音檔是 mp3、m4a 還是 wav，都不用改程式。
-   */
-  function probeAudio(audio, urls) {
-    return new Promise((resolve, reject) => {
-      let i = 0;
-      const cleanup = () => {
-        audio.removeEventListener('canplay', ok);
-        audio.removeEventListener('error', fail);
-      };
-      const ok = () => { cleanup(); resolve(urls[i]); };
-      const fail = () => {
-        i += 1;
-        if (i >= urls.length) { cleanup(); reject(new Error('找不到可用的音檔')); return; }
-        audio.src = urls[i];
-        audio.load();
-      };
-      audio.addEventListener('canplay', ok);
-      audio.addEventListener('error', fail);
-      audio.src = urls[0];
-      audio.load();
-    });
-  }
-
-  /** 取得某頁所有可能的語音網址 */
-  const speechCandidates = (page) =>
-    CONFIG.speechExts.map((ext) => `${CONFIG.speechDir}${CONFIG.speechName(page)}.${ext}`);
-
-  /* ---------- 4. 頁面模組 ---------- */
-
-  const imageUrl = (page) => `${CONFIG.imageDir}${page}.${CONFIG.imageExt}`;
-
-  /** 顯示指定頁面；direction: 'next' | 'prev' | 'fade' 決定動畫方向 */
-  function showPage(page, direction = 'fade') {
-    page = Math.max(CONFIG.firstPage, Math.min(CONFIG.lastPage, page));
-    const token = ++state.pageToken;
-    state.page = page;
-
-    stopSpeech();                // 換頁時停止上一頁的朗讀
-    hideBubble();
-    updateUI();
-
-    // 先預載圖片，載入完成才切換，避免畫面閃白
-    const loader = new Image();
-    loader.onload = () => {
-      if (token !== state.pageToken) return;      // 使用者已經又翻頁了
-      els.error.hidden = true;
-      els.img.style.visibility = 'visible';
-      els.img.src = loader.src;
-      els.img.alt = `繪本第 ${page + 1} 頁`;
-      els.img.className = '';
-      void els.img.offsetWidth;                   // 強制重排，讓動畫可重複觸發
-      els.img.classList.add(`enter-${direction}`);
-    };
-    loader.onerror = () => {
-      if (token !== state.pageToken) return;
-      els.img.style.visibility = 'hidden';
-      els.error.hidden = false;
-    };
-    loader.src = imageUrl(page);
-
-    preloadNeighbors(page);
-  }
-
-  /** 偷偷預載前後頁，翻頁更流暢 */
-  function preloadNeighbors(page) {
-    [page - 1, page + 1].forEach((p) => {
-      if (p >= CONFIG.firstPage && p <= CONFIG.lastPage) new Image().src = imageUrl(p);
-    });
-  }
-
-  /** 更新頁碼、進度條、按鈕可用狀態 */
-  function updateUI() {
-    const total = CONFIG.lastPage - CONFIG.firstPage + 1;
-    const current = state.page - CONFIG.firstPage + 1;
-    els.indicator.textContent = `${current} / ${total}`;
-    els.bar.style.width = `${(current / total) * 100}%`;
-    els.prev.disabled = state.page <= CONFIG.firstPage;
-    els.next.disabled = state.page >= CONFIG.lastPage;
-  }
-
-  const goNext = () => { if (state.page < CONFIG.lastPage) showPage(state.page + 1, 'next'); else celebrate(); };
-  const goPrev = () => { if (state.page > CONFIG.firstPage) showPage(state.page - 1, 'prev'); };
-
-  /* ---------- 5. 朗讀模組 ---------- */
-
-  function setReading(on) {
-    state.reading = on;
-    els.read.classList.toggle('active', on);
-    applyMusicVolume();                           // 朗讀時壓低背景音樂
-  }
-
-  function stopSpeech() {
-    state.speechToken++;                          // 讓進行中的載入失效
-    speechAudio.pause();
-    speechAudio.currentTime = 0;
-    setReading(false);
-  }
-
-  /** 點朗讀鈕：播放中就停止，否則播放本頁語音 */
-  async function toggleRead() {
-    if (state.reading) { stopSpeech(); return; }
-
-    const token = ++state.speechToken;
-    const page = state.page;
-    try {
-      // 已確認過的檔案直接用，否則依序探測副檔名
-      let url = state.speechUrlCache[page];
-      if (url) {
-        speechAudio.src = url;
-      } else {
-        url = await probeAudio(speechAudio, speechCandidates(page));
-        state.speechUrlCache[page] = url;
-      }
-      if (token !== state.speechToken) return;    // 載入期間使用者已翻頁或取消
-      setReading(true);
-      await speechAudio.play();
-    } catch (err) {
-      if (token === state.speechToken) {
-        setReading(false);
-        toast(`第 ${page + 1} 頁找不到語音檔 🔇（請檢查 speech/ 資料夾）`);
-      }
-    }
-  }
-
-  speechAudio.addEventListener('ended', () => {
-    setReading(false);
-    if (CONFIG.autoNextAfterRead) goNext();
-  });
-
-  /* ---------- 6. 音樂模組 ---------- */
-
-  function applyMusicVolume() {
-    musicAudio.volume = state.reading ? CONFIG.musicDuckVolume : CONFIG.musicVolume;
-  }
-
-  function renderMusicBtn() {
-    els.music.classList.toggle('off', !state.musicOn);
-    els.musicIcon.textContent = state.musicOn ? '🎵' : '🔇';
-  }
-
-  async function setMusic(on) {
-    if (on) {
-      try {
-        if (!state.musicUrl) state.musicUrl = await probeAudio(musicAudio, CONFIG.musicCandidates);
-        await musicAudio.play();
-        state.musicOn = true;
-      } catch (err) {
-        state.musicOn = false;
-        toast('找不到背景音樂 🎵（請檢查 music/ 資料夾與 app.js 的 musicCandidates）', 4000);
-      }
-    } else {
-      musicAudio.pause();
-      state.musicOn = false;
-    }
-    renderMusicBtn();
-  }
-
-  /* ---------- 7. 精靈模組 ---------- */
-
-  let bubbleTimer;
-  function hideBubble() { clearTimeout(bubbleTimer); els.bubble.hidden = true; }
-
-  function showBubble(text, ms = 4000) {
-    els.bubble.textContent = text;
-    els.bubble.hidden = false;
-    // 重新觸發彈出動畫
-    els.bubble.style.animation = 'none'; void els.bubble.offsetWidth; els.bubble.style.animation = '';
-    clearTimeout(bubbleTimer);
-    bubbleTimer = setTimeout(hideBubble, ms);
-  }
-
-  /** 從指定座標噴出一圈星星 */
-  function sparkleBurst(x, y, count = 14) {
-    for (let i = 0; i < count; i++) {
-      const s = document.createElement('span');
-      s.className = 'sparkle';
-      s.textContent = CONFIG.sparkleEmojis[Math.floor(Math.random() * CONFIG.sparkleEmojis.length)];
-      const angle = (Math.PI * 2 * i) / count + Math.random() * 0.4;
-      const dist = 90 + Math.random() * 120;
-      s.style.left = `${x}px`;
-      s.style.top = `${y}px`;
-      s.style.setProperty('--dx', `${Math.cos(angle) * dist}px`);
-      s.style.setProperty('--dy', `${Math.sin(angle) * dist}px`);
-      s.style.setProperty('--rot', `${Math.random() * 360 - 180}deg`);
-      s.addEventListener('animationend', () => s.remove());
-      els.fx.appendChild(s);
-    }
-  }
-
-  /** 點精靈：搖晃 + 星星特效 + 提示台詞 */
-  function onSpirit() {
-    const r = els.spirit.getBoundingClientRect();
-    sparkleBurst(r.left + r.width / 2, r.top + r.height / 2);
-
-    els.spirit.classList.remove('wiggle');
-    void els.spirit.offsetWidth;
-    els.spirit.classList.add('wiggle');
-
-    const tip = CONFIG.spiritTips[state.page] ||
-      CONFIG.defaultTips[Math.floor(Math.random() * CONFIG.defaultTips.length)];
-    showBubble(tip);
-  }
-
-  /** 讀到最後一頁再按「下一頁」：全螢幕慶祝 */
-  function celebrate() {
-    for (let i = 0; i < 6; i++) {
-      setTimeout(() => sparkleBurst(
-        window.innerWidth * (0.15 + Math.random() * 0.7),
-        window.innerHeight * (0.2 + Math.random() * 0.5), 12), i * 180);
-    }
-    showBubble('太棒了！你讀完整本繪本了 🎉');
-  }
-
-  /* ---------- 8. 事件綁定 ---------- */
-
-  function bindEvents() {
-    els.prev.addEventListener('click', goPrev);
-    els.next.addEventListener('click', goNext);
-    els.read.addEventListener('click', toggleRead);
-    els.spirit.addEventListener('click', onSpirit);
-    els.music.addEventListener('click', () => setMusic(!state.musicOn));
-
-    // 鍵盤：←/→ 翻頁、空白鍵朗讀、M 音樂
-    document.addEventListener('keydown', (e) => {
-      if (els.app.hidden) return;
-      if (e.key === 'ArrowRight') goNext();
-      else if (e.key === 'ArrowLeft') goPrev();
-      else if (e.key === ' ') { e.preventDefault(); toggleRead(); }
-      else if (e.key.toLowerCase() === 'm') setMusic(!state.musicOn);
-    });
-
-    // 觸控滑動：向左滑 = 下一頁，向右滑 = 上一頁
-    let startX = 0, startY = 0;
-    els.stage.addEventListener('touchstart', (e) => {
-      startX = e.touches[0].clientX; startY = e.touches[0].clientY;
-    }, { passive: true });
-    els.stage.addEventListener('touchend', (e) => {
-      const dx = e.changedTouches[0].clientX - startX;
-      const dy = e.changedTouches[0].clientY - startY;
-      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) (dx < 0 ? goNext : goPrev)();
-    }, { passive: true });
-
-    // 開始畫面：使用者點擊後才能合法播放音訊
-    els.btnStart.addEventListener('click', () => {
-      els.start.hidden = true;
-      els.app.hidden = false;
-      showPage(CONFIG.firstPage, 'fade');
-      renderMusicBtn();
-      if (els.optMusic.checked) setMusic(true);
-    });
-
-    // 分頁切到背景時暫停音樂，回來再繼續
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) musicAudio.pause();
-      else if (state.musicOn) musicAudio.play().catch(() => {});
-    });
-  }
-
-  bindEvents();
-})();
+  <script src="app.js"></script>
+</body>
+</html>
