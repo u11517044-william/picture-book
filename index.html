@@ -21,8 +21,8 @@
       <button id="prev-btn" class="nav-btn nav-left" aria-label="上一頁"><img src="graphics/left.jpg" alt="上一頁"></button>
 
       <div id="book">
-        <!-- 起始載入第 0 頁；之後由 app.js 切換 src -->
-        <img id="page-image" src="graphics/0.jpg" alt="繪本第 1 頁">
+        <!-- 起始載入第 0 頁；補上 handleImageLoad 與 handleImageError 監聽 -->
+        <img id="page-image" src="graphics/0.jpg" alt="繪本第 1 頁" onload="if(typeof handleImageLoad==='function')handleImageLoad()" onerror="if(typeof handleImageError==='function')handleImageError()">
 
         <!-- 載入中提示 -->
         <div id="loading-indicator">載入中...</div>
