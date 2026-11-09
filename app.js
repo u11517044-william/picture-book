@@ -3,13 +3,13 @@
    結構：
      1. CONFIG        設定區（檔名、頁數、音量）
      2. DOM / State   元素與狀態
-     3. 工具函式      提示訊息、除錯記錄
-     4. 頁面模組      翻頁、載入 / 錯誤提示、邊界限制
-     5. 預載模組      預載第 N+1 頁的圖片與語音
-     6. 朗讀模組      播放 / 中斷 / 背景音樂降音量
-     7. 音樂模組      自動循環播放、靜音、空白鍵暫停
-     8. 除錯模組      Debug 按鈕與面板
-     9. 事件綁定      按鈕、鍵盤、滑動手勢
+     3. 工具函式     提示訊息、除錯記錄
+     4. 頁面模組     翻頁、載入 / 錯誤提示、邊界限制
+     5. 預載模組     預載第 N+1 頁的圖片與語音
+     6. 朗讀模組     播放 / 中斷 / 背景音樂降音量
+     7. 音樂模組     自動循環播放、靜音、空白鍵暫停
+     8. 除錯模組     Debug 按鈕與面板
+     9. 事件綁定     按鈕、鍵盤、滑動手勢
    ========================================================== */
 (() => {
   'use strict';
@@ -23,10 +23,10 @@
     imageDir: 'graphics/',
     imageExt: 'jpg',
 
-    // 語音：依序嘗試 speech/N.mp3 → N.wav → N.m4a → N.ogg
+    // 語音：配合您的實際檔名 speech0.mp3 ~ speech19.mp3
     speechDir: 'speech/',
     speechExts: ['mp3', 'wav', 'm4a', 'ogg'],
-    speechName: (page) => String(page),           // 若檔名不是純數字，改這裡
+    speechName: (page) => `speech${page}`,       // 👈 已修正為符合 speech0.mp3 命名格式
 
     // 背景音樂：依序嘗試，使用第一個能播放的。請把你的實際檔名加在最前面
     musicCandidates: [
@@ -45,12 +45,12 @@
   const $ = (id) => document.getElementById(id);
   const els = {
     img: $('page-image'),
-    prev: $('prev-btn'), next: $('next-btn'),
-    read: $('read-btn'), spirit: $('spirit-btn'), debug: $('debug-btn'),
-    indicator: $('page-indicator'), bar: $('progress-bar'), stage: $('stage'),
+    prev: $('prev-btn'), next:$('next-btn'),
+    read: $('read-btn'), spirit: $('spirit-btn'), debug:$('debug-btn'),
+    indicator: $('page-indicator'), bar: $('progress-bar'), stage:$('stage'),
     loading: $('loading-indicator'),
-    error: $('error-message'), retry: $('retry-btn'),
-    toast: $('toast'), debugPanel: $('debug-panel'),
+    error: $('error-message'), retry:$('retry-btn'),
+    toast: $('toast'), debugPanel:$('debug-panel'),
   };
 
   const state = {
@@ -254,200 +254,4 @@
       for (const url of urls) {
         music.src = url;
         try {
-          await music.play();
-          state.musicUrl = url;
-          log(`背景音樂播放中：${url}`);
-          return 'playing';
-        } catch (err) {
-          if (err && err.name === 'NotAllowedError') return 'blocked';
-          log(`音樂載入失敗：${url}（${err && err.name}）`);
-        }
-      }
-      return 'missing';
-    })().finally(() => { musicLoading = null; });
-    return musicLoading;
-  }
-
-  /** 空白鍵：播放 / 暫停背景音樂 */
-  async function toggleMusicPlayback() {
-    if (music.paused) {
-      const r = await startMusic();
-      if (r === 'missing') toast('找不到背景音樂 🎵（請檢查 music/ 資料夾）', 4000);
-    } else {
-      music.pause();
-      log('背景音樂已暫停');
-    }
-  }
-
-  /** 靜音 / 解除靜音（用 muted 屬性，音量數值 0.5 / 0.15 不受影響） */
-  function setMuted(m) {
-    state.muted = m;
-    music.muted = m;
-    els.spirit.classList.toggle('is-muted', m);
-    els.spirit.setAttribute('aria-pressed', String(m));
-    els.spirit.title = m ? '解除靜音' : '靜音';
-    log(m ? '背景音樂已靜音' : '背景音樂已解除靜音');
-  }
-
-  function onSpiritClick() {
-    setMuted(!state.muted);
-    els.spirit.classList.remove('wiggle');
-    void els.spirit.offsetWidth;
-    els.spirit.classList.add('wiggle');
-  }
-
-  /**
-   * 自動播放：先直接嘗試；若被瀏覽器擋下，就在使用者第一次互動時啟動。
-   * （空白鍵不列入，因為空白鍵本身就是「播放 / 暫停」。）
-   */
-  function initMusicAutoplay() {
-    const events = ['pointerdown', 'touchend', 'keydown'];
-    const unlock = async (e) => {
-      if (e.type === 'keydown' && (e.key === ' ' || e.code === 'Space')) return;
-      const r = await startMusic();
-      if (r === 'playing') {
-        events.forEach((t) => document.removeEventListener(t, unlock, true));
-      } else if (r === 'missing') {
-        events.forEach((t) => document.removeEventListener(t, unlock, true));
-        toast('找不到背景音樂 🎵（請檢查 music/ 資料夾）', 4000);
-      }
-    };
-
-    startMusic().then((r) => {
-      if (r === 'blocked') {
-        events.forEach((t) => document.addEventListener(t, unlock, true));
-        log('自動播放被擋下，等待使用者互動');
-      } else if (r === 'missing') {
-        toast('找不到背景音樂 🎵（請檢查 music/ 資料夾）', 4000);
-      }
-    });
-  }
-
-  /* ---------- 8. 除錯模組 ---------- */
-
-  function snapshot() {
-    return {
-      page: state.page,
-      indicator: els.indicator.textContent,
-      imageSrc: els.img.getAttribute('src'),
-      prevDisabled: els.prev.disabled,
-      nextDisabled: els.next.disabled,
-      music: {
-        src: music.getAttribute('src'), paused: music.paused, muted: music.muted,
-        volume: music.volume, currentTime: Number(music.currentTime.toFixed(1)),
-      },
-      speech: {
-        src: speechAudio.getAttribute('src'), paused: speechAudio.paused,
-        currentTime: Number(speechAudio.currentTime.toFixed(1)), reading: state.reading,
-      },
-      speechUrlCache: state.speechUrlCache,
-      recentLog: debugLog.slice(-10),
-    };
-  }
-
-  let debugTimer = null;
-  function renderDebug() { els.debugPanel.textContent = JSON.stringify(snapshot(), null, 2); }
-
-  function toggleDebugPanel() {
-    const show = els.debugPanel.hidden;
-    els.debugPanel.hidden = !show;
-    clearInterval(debugTimer);
-    if (show) { renderDebug(); debugTimer = setInterval(renderDebug, 500); }
-    console.log('[ebook] debug snapshot', snapshot());
-  }
-
-  /** 除錯按鈕平常隱藏：網址加 ?debug，或按鍵盤 D 鍵可顯示 / 隱藏 */
-  function toggleDebugButton(forceShow) {
-    const show = typeof forceShow === 'boolean' ? forceShow : els.debug.style.display === 'none';
-    els.debug.style.display = show ? '' : 'none';
-    if (!show) { els.debugPanel.hidden = true; clearInterval(debugTimer); }
-  }
-
-  // 提供給瀏覽器 Console 使用：ebookDebug.getState() / ebookDebug.goTo(5)
-  window.ebookDebug = { getState: snapshot, goTo: (p) => showPage(p, 'fade') };
-
-  /* ---------- 9. 事件綁定 ---------- */
-
-  function bindEvents() {
-    els.prev.addEventListener('click', goPrev);
-    els.next.addEventListener('click', goNext);
-    els.read.addEventListener('click', readCurrentPage);
-    els.spirit.addEventListener('click', onSpiritClick);
-    els.debug.addEventListener('click', toggleDebugPanel);
-
-    // 圖片事件
-    els.img.addEventListener('load', handleImageLoad);
-    els.img.addEventListener('error', handleImageError);
-
-    // 重試：清除失敗的快取，重新載入目前頁面
-    els.retry.addEventListener('click', () => {
-      state.speechUrlCache = {};
-      Object.keys(preloadedAudio).forEach((k) => delete preloadedAudio[k]);
-      Object.keys(preloadedImages).forEach((k) => delete preloadedImages[k]);
-      showError(false);
-      showLoading(true);
-      els.img.style.visibility = 'visible';
-      els.img.src = `${imageUrl(state.page)}?retry=${Date.now()}`;
-      preloadNext(state.page);
-      log('使用者按下重試');
-    });
-
-    // 鍵盤：← 上一頁、→ 下一頁、空白鍵 播放 / 暫停音樂、D 顯示除錯按鈕
-    document.addEventListener('keydown', (e) => {
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.key === 'ArrowLeft') { e.preventDefault(); goPrev(); }
-      else if (e.key === 'ArrowRight') { e.preventDefault(); goNext(); }
-      else if (e.key === ' ' || e.code === 'Space') {
-        e.preventDefault();                          // 防止網頁向下捲動
-        if (!e.repeat) toggleMusicPlayback();
-      } else if (e.key === 'd' || e.key === 'D') {
-        toggleDebugButton();
-      }
-    });
-    // 部分瀏覽器（如 Firefox）會在 keyup 時對聚焦中的按鈕觸發 click，這裡一併攔截
-    document.addEventListener('keyup', (e) => {
-      if (e.key === ' ' || e.code === 'Space') e.preventDefault();
-    });
-
-    // 觸控滑動：向左滑 = 下一頁，向右滑 = 上一頁
-    let startX = 0, startY = 0;
-    els.stage.addEventListener('touchstart', (e) => {
-      startX = e.touches[0].clientX; startY = e.touches[0].clientY;
-    }, { passive: true });
-    els.stage.addEventListener('touchend', (e) => {
-      const dx = e.changedTouches[0].clientX - startX;
-      const dy = e.changedTouches[0].clientY - startY;
-      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) (dx < 0 ? goNext : goPrev)();
-    }, { passive: true });
-
-    // 分頁切到背景時暫停音樂，回來再繼續
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        state.musicWasPlayingBeforeHide = !music.paused;
-        music.pause();
-      } else if (state.musicWasPlayingBeforeHide) {
-        music.play().catch(() => {});
-      }
-    });
-  }
-
-  /* ---------- 初始化 ---------- */
-  function init() {
-    bindEvents();
-    updateUI();
-    setMuted(false);
-
-    // HTML 已指定 graphics/0.jpg；若在 JS 執行前就載入完成，補做一次狀態處理
-    if (els.img.complete) {
-      if (els.img.naturalWidth > 0) handleImageLoad(); else handleImageError();
-    } else {
-      showLoading(true);
-    }
-
-    preloadNext(state.page);
-    initMusicAutoplay();
-    if (/[?&]debug\b/.test(location.search)) toggleDebugButton(true);
-  }
-
-  init();
-})();
+          await music.
